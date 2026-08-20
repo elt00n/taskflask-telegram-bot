@@ -95,6 +95,7 @@ func TestNewTaskRejectsInvalidData(t *testing.T) {
 	now := time.Date(2026, time.August, 20, 9, 0, 0, 0, time.UTC)
 	start := now.Add(time.Hour)
 	endBeforeStart := start.Add(-time.Minute)
+	pastDeadline := now.Add(-time.Nanosecond)
 
 	tests := []struct {
 		name    string
@@ -169,6 +170,18 @@ func TestNewTaskRejectsInvalidData(t *testing.T) {
 			now:     now,
 			wantErr: domain.ErrInvalidTimeRange,
 		},
+		{
+			name: "deadline in the past",
+			params: domain.NewTaskParams{
+				ID:        "task-1",
+				ChatID:    -100123,
+				CreatorID: 42,
+				Title:     "Задача",
+				Deadline:  &pastDeadline,
+			},
+			now:     now,
+			wantErr: domain.ErrDeadlineInPast,
+		},
 	}
 
 	for _, tt := range tests {
@@ -178,6 +191,20 @@ func TestNewTaskRejectsInvalidData(t *testing.T) {
 				t.Errorf("NewTask() error = %v, want %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestNewTaskAcceptsDeadlineAtCurrentMoment(t *testing.T) {
+	now := time.Date(2026, time.August, 20, 9, 0, 0, 0, time.UTC)
+	params := validTaskParamsWithID()
+	params.Deadline = &now
+
+	task, err := domain.NewTask(params, now)
+	if err != nil {
+		t.Fatalf("NewTask() returned an unexpected error: %v", err)
+	}
+	if task.Deadline == nil || !task.Deadline.Equal(now) {
+		t.Errorf("Deadline = %v, want %v", task.Deadline, now)
 	}
 }
 

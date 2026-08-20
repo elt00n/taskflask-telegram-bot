@@ -35,6 +35,7 @@ var (
 	deadlineWeekdayPattern = regexp.MustCompile(
 		`(?i)^до\s+([а-яё]+)(?:\s+(\d{1,2}:\d{2}))?\s+(.+)$`,
 	)
+	deadlinePrefixPattern = regexp.MustCompile(`(?i)^до(?:\s+|$)`)
 )
 
 var russianMonths = map[string]time.Month{
@@ -114,6 +115,8 @@ func ParseTask(text string, now time.Time, location *time.Location) (ParsedTask,
 		parsed.Title, parsed.Deadline, err = parseDeadlineDate(body, now, location)
 	case deadlineWeekdayPattern.MatchString(body):
 		parsed.Title, parsed.Deadline, err = parseDeadlineWeekday(body, now, location)
+	case deadlinePrefixPattern.MatchString(body):
+		err = ErrInvalidTaskDate
 	default:
 		parsed.Title = body
 	}
@@ -244,13 +247,13 @@ func parseDeadlineDate(
 	if !valid {
 		return "", nil, ErrInvalidTaskDate
 	}
-	if !deadline.After(now) && !explicitYear {
+	if deadline.Before(now) && !explicitYear {
 		deadline, valid = calendarDate(year+1, month, day, hour, minute, location)
 		if !valid {
 			return "", nil, ErrInvalidTaskDate
 		}
 	}
-	if !deadline.After(now) {
+	if deadline.Before(now) {
 		return "", nil, ErrTaskTimeInPast
 	}
 

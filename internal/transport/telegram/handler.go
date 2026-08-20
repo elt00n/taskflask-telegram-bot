@@ -213,7 +213,7 @@ func userErrorMessage(err error) string {
 		return "Укажите название после /task. Например: /task Купить молоко"
 	case errors.Is(err, parser.ErrInvalidTaskTime), errors.Is(err, parser.ErrInvalidTaskDate):
 		return "Не удалось разобрать дату или время. Используйте, например: /task завтра 18:00 Встреча"
-	case errors.Is(err, parser.ErrTaskTimeInPast):
+	case errors.Is(err, parser.ErrTaskTimeInPast), errors.Is(err, domain.ErrDeadlineInPast):
 		return "Указанное время уже прошло. Выберите будущее время."
 	case errors.Is(err, errUnknownParticipants):
 		return "Я ещё не знаю одного из указанных участников. Попросите его сначала выполнить /start или /help в этом чате."

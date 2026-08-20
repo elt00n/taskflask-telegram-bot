@@ -103,6 +103,33 @@ func TestParseTaskMovesDateWithoutYearToNextYear(t *testing.T) {
 	assertOptionalTime(t, "Deadline", got.Deadline, &want)
 }
 
+func TestParseTaskAcceptsValidLeapDay(t *testing.T) {
+	location := mustLocation(t, "Europe/Moscow")
+	now := time.Date(2026, time.August, 20, 12, 0, 0, 0, location)
+
+	got, err := parser.ParseTask("/task до 29 февраля 2028 Отчёт", now, location)
+	if err != nil {
+		t.Fatalf("ParseTask() returned an unexpected error: %v", err)
+	}
+	want := time.Date(2028, time.February, 29, 23, 59, 0, 0, location)
+	assertOptionalTime(t, "Deadline", got.Deadline, &want)
+}
+
+func TestParseTaskAcceptsDeadlineAtCurrentMoment(t *testing.T) {
+	location := mustLocation(t, "Europe/Moscow")
+	now := time.Date(2026, time.August, 20, 12, 0, 0, 0, location)
+
+	got, err := parser.ParseTask(
+		"/task до 20 августа 2026 12:00 Отправить отчёт",
+		now,
+		location,
+	)
+	if err != nil {
+		t.Fatalf("ParseTask() returned an unexpected error: %v", err)
+	}
+	assertOptionalTime(t, "Deadline", got.Deadline, &now)
+}
+
 func TestParseTaskRejectsInvalidCommands(t *testing.T) {
 	location := mustLocation(t, "Europe/Moscow")
 	now := time.Date(2026, time.August, 20, 12, 0, 0, 0, location)
@@ -118,6 +145,9 @@ func TestParseTaskRejectsInvalidCommands(t *testing.T) {
 		{name: "past time today", input: "/task сегодня 10:00 Опоздавшая встреча", now: now, wantErr: parser.ErrTaskTimeInPast},
 		{name: "invalid clock", input: "/task завтра 25:00 Встреча", now: now, wantErr: parser.ErrInvalidTaskTime},
 		{name: "invalid date", input: "/task до 30 февраля Отчёт", now: now, wantErr: parser.ErrInvalidTaskDate},
+		{name: "invalid day in month", input: "/task до 31 апреля 2027 Отчёт", now: now, wantErr: parser.ErrInvalidTaskDate},
+		{name: "invalid leap day", input: "/task до 29 февраля 2027 Отчёт", now: now, wantErr: parser.ErrInvalidTaskDate},
+		{name: "unsupported numeric date", input: "/task до 31.02.2027 Отчёт", now: now, wantErr: parser.ErrInvalidTaskDate},
 		{name: "explicit past year", input: "/task до 1 января 2025 Старый отчёт", now: now, wantErr: parser.ErrTaskTimeInPast},
 		{name: "missing reference time", input: "/task Задача", wantErr: parser.ErrReferenceTimeNeeded},
 	}

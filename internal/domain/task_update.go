@@ -101,7 +101,12 @@ func (task *Task) SetDeadline(deadline *time.Time, now time.Time) error {
 		return err
 	}
 
-	task.Deadline = timeInUTC(deadline)
+	normalizedDeadline := timeInUTC(deadline)
+	if normalizedDeadline != nil && normalizedDeadline.Before(now.UTC()) {
+		return ErrDeadlineInPast
+	}
+
+	task.Deadline = normalizedDeadline
 	task.UpdatedAt = now.UTC()
 	return nil
 }

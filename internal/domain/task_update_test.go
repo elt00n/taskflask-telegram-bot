@@ -86,6 +86,24 @@ func TestTaskSetDeadlineNormalizesTimeAndCanClearDeadline(t *testing.T) {
 	}
 }
 
+func TestTaskSetDeadlineRejectsPastValue(t *testing.T) {
+	createdAt := time.Date(2026, time.August, 20, 9, 0, 0, 0, time.UTC)
+	updateTime := createdAt.Add(time.Hour)
+	pastDeadline := updateTime.Add(-time.Nanosecond)
+	task := newEditableTask(t, createdAt)
+
+	err := task.SetDeadline(&pastDeadline, updateTime)
+	if !errors.Is(err, domain.ErrDeadlineInPast) {
+		t.Fatalf("SetDeadline() error = %v, want %v", err, domain.ErrDeadlineInPast)
+	}
+	if task.Deadline != nil {
+		t.Errorf("Deadline changed after failed update: %v", task.Deadline)
+	}
+	if !task.UpdatedAt.Equal(createdAt) {
+		t.Errorf("UpdatedAt = %v, want unchanged %v", task.UpdatedAt, createdAt)
+	}
+}
+
 func TestTaskCompleteAndDelete(t *testing.T) {
 	createdAt := time.Date(2026, time.August, 20, 9, 0, 0, 0, time.UTC)
 	completedAt := createdAt.Add(time.Hour)

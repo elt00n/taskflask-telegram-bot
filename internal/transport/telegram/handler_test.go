@@ -41,6 +41,14 @@ func TestHandlerCreatesAndListsTask(t *testing.T) {
 	}
 }
 
+func TestUserErrorMessageExplainsPastDeadline(t *testing.T) {
+	got := userErrorMessage(domain.ErrDeadlineInPast)
+	want := "Указанное время уже прошло. Выберите будущее время."
+	if got != want {
+		t.Errorf("userErrorMessage() = %q, want %q", got, want)
+	}
+}
+
 func TestHandlerResolvesKnownParticipantAndListsTheirTasks(t *testing.T) {
 	handler := newTestHandler(t)
 	user1 := testMessage(1, "user1", "/start")

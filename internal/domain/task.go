@@ -49,6 +49,7 @@ var (
 	ErrTaskTitleRequired    = errors.New("task title is required")
 	ErrStartTimeRequired    = errors.New("start time is required when end time is set")
 	ErrInvalidTimeRange     = errors.New("end time must be after start time")
+	ErrDeadlineInPast       = errors.New("deadline must not be in the past")
 	ErrCreationTimeRequired = errors.New("creation time is required")
 )
 
@@ -112,6 +113,10 @@ func NewTask(params NewTaskParams, now time.Time) (Task, error) {
 	startAt := timeInUTC(params.StartAt)
 	endAt := timeInUTC(params.EndAt)
 	deadline := timeInUTC(params.Deadline)
+	now = now.UTC()
+	if deadline != nil && deadline.Before(now) {
+		return Task{}, ErrDeadlineInPast
+	}
 	kind := TaskKindTask
 	priority := params.Priority
 	if priority == 0 {
@@ -131,8 +136,6 @@ func NewTask(params NewTaskParams, now time.Time) (Task, error) {
 			return Task{}, ErrInvalidTimeRange
 		}
 	}
-
-	now = now.UTC()
 
 	return Task{
 		ID:          params.ID,
