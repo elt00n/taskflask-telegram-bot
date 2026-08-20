@@ -232,6 +232,9 @@ telegram_task_bot/
 │   ├── repository/
 │   │   ├── task_repository.go
 │   │   ├── user_repository.go
+│   │   ├── memory/
+│   │   │   ├── task_repository.go
+│   │   │   └── chat_member_repository.go
 │   │   └── postgres/
 │   │       ├── task_repository.go
 │   │       └── user_repository.go
@@ -266,6 +269,11 @@ telegram_task_bot/
 сущности, `service` — правила, `repository` — хранение, `transport` — внешний мир,
 а `worker` — фоновую работу. Каталог `internal` имеет специальное значение в Go:
 пакеты из него нельзя импортировать из чужого проекта.
+
+До подключения PostgreSQL интерфейсы репозиториев выполняет реализация `memory`.
+Она позволяет тестировать полные пользовательские сценарии без внешней базы, но
+теряет данные при остановке процесса. Сервисный слой зависит от интерфейсов, поэтому
+переход на `postgres` не потребует менять команды Telegram и бизнес-правила.
 
 ## 9. Надёжность напоминаний
 
