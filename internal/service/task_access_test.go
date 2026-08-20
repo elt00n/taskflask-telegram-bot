@@ -107,6 +107,19 @@ func TestTaskAccessPolicyCanDelete(t *testing.T) {
 	}
 }
 
+func TestTaskAccessPolicyHidesDeletedTask(t *testing.T) {
+	task := testTask(t)
+	if err := task.Delete(time.Date(2026, time.August, 21, 12, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("Delete() returned an unexpected error: %v", err)
+	}
+
+	policy := service.TaskAccessPolicy{}
+	member := activeMember(task.ChatID, task.CreatorID)
+	if policy.CanView(task, member) || policy.CanEdit(task, member, nil) || policy.CanDelete(task, member) {
+		t.Error("a deleted task must not allow ordinary view, edit, or delete operations")
+	}
+}
+
 func testTask(t *testing.T) domain.Task {
 	t.Helper()
 

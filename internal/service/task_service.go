@@ -40,6 +40,7 @@ type TaskService struct {
 	members    repository.ChatMemberRepository
 	generateID TaskIDGenerator
 	clock      Clock
+	access     TaskAccessPolicy
 }
 
 // NewTaskService собирает сервис из независимых компонентов.
@@ -61,6 +62,7 @@ func NewTaskService(
 		members:    members,
 		generateID: generateID,
 		clock:      clock,
+		access:     TaskAccessPolicy{},
 	}
 }
 
@@ -142,6 +144,138 @@ func (service *TaskService) ListUserTasks(
 		ChatID: chatID,
 		UserID: &targetUserID,
 	})
+}
+
+// Rename изменяет название задачи от имени пользователя с правом редактирования.
+func (service *TaskService) Rename(
+	ctx context.Context,
+	requesterID domain.UserID,
+	taskID domain.TaskID,
+	title string,
+) (domain.Task, error) {
+	return service.editTask(ctx, requesterID, taskID, func(task *domain.Task, now time.Time) error {
+		return task.Rename(title, now)
+	})
+}
+
+// ChangeDescription изменяет или очищает описание задачи.
+func (service *TaskService) ChangeDescription(
+	ctx context.Context,
+	requesterID domain.UserID,
+	taskID domain.TaskID,
+	description string,
+) (domain.Task, error) {
+	return service.editTask(ctx, requesterID, taskID, func(task *domain.Task, now time.Time) error {
+		return task.SetDescription(description, now)
+	})
+}
+
+// ChangePriority изменяет важность задачи.
+func (service *TaskService) ChangePriority(
+	ctx context.Context,
+	requesterID domain.UserID,
+	taskID domain.TaskID,
+	priority domain.TaskPriority,
+) (domain.Task, error) {
+	return service.editTask(ctx, requesterID, taskID, func(task *domain.Task, now time.Time) error {
+		return task.SetPriority(priority, now)
+	})
+}
+
+// ChangeSchedule устанавливает или очищает время начала и окончания.
+func (service *TaskService) ChangeSchedule(
+	ctx context.Context,
+	requesterID domain.UserID,
+	taskID domain.TaskID,
+	startAt *time.Time,
+	endAt *time.Time,
+) (domain.Task, error) {
+	return service.editTask(ctx, requesterID, taskID, func(task *domain.Task, now time.Time) error {
+		return task.SetSchedule(startAt, endAt, now)
+	})
+}
+
+// ChangeDeadline устанавливает или очищает дедлайн.
+func (service *TaskService) ChangeDeadline(
+	ctx context.Context,
+	requesterID domain.UserID,
+	taskID domain.TaskID,
+	deadline *time.Time,
+) (domain.Task, error) {
+	return service.editTask(ctx, requesterID, taskID, func(task *domain.Task, now time.Time) error {
+		return task.SetDeadline(deadline, now)
+	})
+}
+
+// Complete отмечает задачу выполненной.
+func (service *TaskService) Complete(
+	ctx context.Context,
+	requesterID domain.UserID,
+	taskID domain.TaskID,
+) (domain.Task, error) {
+	return service.editTask(ctx, requesterID, taskID, func(task *domain.Task, now time.Time) error {
+		return task.Complete(now)
+	})
+}
+
+// Delete мягко удаляет задачу. Эта операция доступна только создателю.
+func (service *TaskService) Delete(
+	ctx context.Context,
+	requesterID domain.UserID,
+	taskID domain.TaskID,
+) (domain.Task, error) {
+	task, _, err := service.tasks.Get(ctx, taskID)
+	if err != nil {
+		return domain.Task{}, fmt.Errorf("get task: %w", err)
+	}
+
+	member, err := service.activeMember(ctx, task.ChatID, requesterID)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	if !service.access.CanDelete(task, member) {
+		return domain.Task{}, ErrTaskAccessDenied
+	}
+
+	if err := task.Delete(service.clock()); err != nil {
+		return domain.Task{}, fmt.Errorf("delete task: %w", err)
+	}
+	if err := service.tasks.Update(ctx, task); err != nil {
+		return domain.Task{}, fmt.Errorf("save deleted task: %w", err)
+	}
+
+	return task, nil
+}
+
+type taskMutation func(task *domain.Task, now time.Time) error
+
+func (service *TaskService) editTask(
+	ctx context.Context,
+	requesterID domain.UserID,
+	taskID domain.TaskID,
+	mutate taskMutation,
+) (domain.Task, error) {
+	task, participants, err := service.tasks.Get(ctx, taskID)
+	if err != nil {
+		return domain.Task{}, fmt.Errorf("get task: %w", err)
+	}
+
+	member, err := service.activeMember(ctx, task.ChatID, requesterID)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	if !service.access.CanEdit(task, member, participants) {
+		return domain.Task{}, ErrTaskAccessDenied
+	}
+
+	if err := mutate(&task, service.clock()); err != nil {
+		return domain.Task{}, fmt.Errorf("edit task: %w", err)
+	}
+	if err := service.tasks.Update(ctx, task); err != nil {
+		return domain.Task{}, fmt.Errorf("save task: %w", err)
+	}
+
+	return task, nil
 }
 
 func (service *TaskService) prepareParticipants(

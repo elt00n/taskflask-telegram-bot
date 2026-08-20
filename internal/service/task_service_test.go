@@ -190,6 +190,172 @@ func TestTaskServiceListDeniesNonMember(t *testing.T) {
 	}
 }
 
+func TestTaskServiceAllowsAssignedParticipantToEditAndComplete(t *testing.T) {
+	ctx := context.Background()
+	currentTime := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
+	taskRepo := memory.NewTaskRepository()
+	memberRepo := memory.NewChatMemberRepository()
+	upsertActiveMember(t, memberRepo, -100123, 1)
+	upsertActiveMember(t, memberRepo, -100123, 2)
+
+	taskService := service.NewTaskService(
+		taskRepo,
+		memberRepo,
+		func() (domain.TaskID, error) { return "task-1", nil },
+		func() time.Time { return currentTime },
+	)
+	task := createTaskThroughService(t, taskService, service.CreateTaskCommand{
+		ChatID:         -100123,
+		CreatorID:      1,
+		Title:          "Исходное название",
+		ParticipantIDs: []domain.UserID{2},
+	})
+
+	currentTime = currentTime.Add(time.Hour)
+	updated, err := taskService.Rename(ctx, 2, task.ID, "  Новое название  ")
+	if err != nil {
+		t.Fatalf("Rename() returned an unexpected error: %v", err)
+	}
+	if updated.Title != "Новое название" {
+		t.Errorf("renamed title = %q, want %q", updated.Title, "Новое название")
+	}
+
+	currentTime = currentTime.Add(time.Hour)
+	updated, err = taskService.ChangePriority(ctx, 2, task.ID, domain.TaskPriorityCritical)
+	if err != nil {
+		t.Fatalf("ChangePriority() returned an unexpected error: %v", err)
+	}
+	if updated.Priority != domain.TaskPriorityCritical {
+		t.Errorf("priority = %d, want %d", updated.Priority, domain.TaskPriorityCritical)
+	}
+
+	currentTime = currentTime.Add(time.Hour)
+	updated, err = taskService.Complete(ctx, 2, task.ID)
+	if err != nil {
+		t.Fatalf("Complete() returned an unexpected error: %v", err)
+	}
+	if updated.Status != domain.TaskStatusDone {
+		t.Errorf("status = %q, want %q", updated.Status, domain.TaskStatusDone)
+	}
+
+	stored, _, err := taskRepo.Get(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("Get() returned an unexpected error: %v", err)
+	}
+	if stored.Title != updated.Title || stored.Priority != updated.Priority || stored.Status != updated.Status {
+		t.Errorf("stored task = %#v, want the latest updated state %#v", stored, updated)
+	}
+}
+
+func TestTaskServiceDeniesEditToUnassignedChatMember(t *testing.T) {
+	ctx := context.Background()
+	taskRepo := memory.NewTaskRepository()
+	memberRepo := memory.NewChatMemberRepository()
+	upsertActiveMember(t, memberRepo, -100123, 1)
+	upsertActiveMember(t, memberRepo, -100123, 3)
+
+	taskService := service.NewTaskService(
+		taskRepo,
+		memberRepo,
+		func() (domain.TaskID, error) { return "task-1", nil },
+		time.Now,
+	)
+	task := createTaskThroughService(t, taskService, service.CreateTaskCommand{
+		ChatID:    -100123,
+		CreatorID: 1,
+		Title:     "Чужая задача",
+	})
+
+	_, err := taskService.Rename(ctx, 3, task.ID, "Попытка изменения")
+	if !errors.Is(err, service.ErrTaskAccessDenied) {
+		t.Fatalf("Rename() error = %v, want %v", err, service.ErrTaskAccessDenied)
+	}
+
+	stored, _, err := taskRepo.Get(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("Get() returned an unexpected error: %v", err)
+	}
+	if stored.Title != "Чужая задача" {
+		t.Errorf("stored title = %q, want unchanged title", stored.Title)
+	}
+}
+
+func TestTaskServiceSoftDeleteIsCreatorOnly(t *testing.T) {
+	ctx := context.Background()
+	currentTime := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
+	taskRepo := memory.NewTaskRepository()
+	memberRepo := memory.NewChatMemberRepository()
+	upsertActiveMember(t, memberRepo, -100123, 1)
+	upsertActiveMember(t, memberRepo, -100123, 2)
+
+	taskService := service.NewTaskService(
+		taskRepo,
+		memberRepo,
+		func() (domain.TaskID, error) { return "task-1", nil },
+		func() time.Time { return currentTime },
+	)
+	task := createTaskThroughService(t, taskService, service.CreateTaskCommand{
+		ChatID:         -100123,
+		CreatorID:      1,
+		Title:          "Удаляемая задача",
+		ParticipantIDs: []domain.UserID{2},
+	})
+
+	_, err := taskService.Delete(ctx, 2, task.ID)
+	if !errors.Is(err, service.ErrTaskAccessDenied) {
+		t.Fatalf("participant Delete() error = %v, want %v", err, service.ErrTaskAccessDenied)
+	}
+
+	currentTime = currentTime.Add(time.Hour)
+	deleted, err := taskService.Delete(ctx, 1, task.ID)
+	if err != nil {
+		t.Fatalf("creator Delete() returned an unexpected error: %v", err)
+	}
+	if !deleted.IsDeleted() {
+		t.Error("Delete() must return a soft-deleted task")
+	}
+
+	listed, err := taskService.ListChatTasks(ctx, 2, -100123)
+	if err != nil {
+		t.Fatalf("ListChatTasks() returned an unexpected error: %v", err)
+	}
+	if len(listed) != 0 {
+		t.Errorf("ListChatTasks() returned %d tasks after deletion, want 0", len(listed))
+	}
+
+	stored, _, err := taskRepo.Get(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("Get() returned an unexpected error: %v", err)
+	}
+	if !stored.IsDeleted() {
+		t.Error("repository must retain the soft-deleted task")
+	}
+}
+
+func TestTaskServiceReturnsDomainValidationError(t *testing.T) {
+	ctx := context.Background()
+	taskRepo := memory.NewTaskRepository()
+	memberRepo := memory.NewChatMemberRepository()
+	upsertActiveMember(t, memberRepo, -100123, 1)
+
+	taskService := service.NewTaskService(
+		taskRepo,
+		memberRepo,
+		func() (domain.TaskID, error) { return "task-1", nil },
+		time.Now,
+	)
+	task := createTaskThroughService(t, taskService, service.CreateTaskCommand{
+		ChatID:    -100123,
+		CreatorID: 1,
+		Title:     "Задача",
+	})
+
+	_, err := taskService.Rename(ctx, 1, task.ID, "   ")
+	if !errors.Is(err, domain.ErrTaskTitleRequired) {
+		t.Fatalf("Rename() error = %v, want %v", err, domain.ErrTaskTitleRequired)
+	}
+}
+
 func TestGenerateTaskIDReturnsUUIDVersion4(t *testing.T) {
 	first, err := service.GenerateTaskID()
 	if err != nil {

@@ -31,5 +31,6 @@ type TaskRepository interface {
 		ctx context.Context,
 		taskID domain.TaskID,
 	) (domain.Task, []domain.TaskParticipant, error)
+	Update(ctx context.Context, task domain.Task) error
 	List(ctx context.Context, filter TaskFilter) ([]domain.Task, error)
 }

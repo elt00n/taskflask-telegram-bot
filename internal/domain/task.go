@@ -68,6 +68,7 @@ type Task struct {
 	Deadline    *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	DeletedAt   *time.Time
 }
 
 // NewTaskParams группирует данные, из которых создаётся новая задача.

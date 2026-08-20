@@ -76,6 +76,25 @@ func (repo *TaskRepository) Get(
 	return record.task, cloneParticipants(record.participants), nil
 }
 
+// Update заменяет данные существующей задачи, сохраняя её участников.
+func (repo *TaskRepository) Update(ctx context.Context, task domain.Task) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	repo.mutex.Lock()
+	defer repo.mutex.Unlock()
+
+	record, exists := repo.tasks[task.ID]
+	if !exists {
+		return repository.ErrTaskNotFound
+	}
+
+	record.task = task
+	repo.tasks[task.ID] = record
+	return nil
+}
+
 // List возвращает задачи чата, при необходимости связанные с выбранным человеком.
 // Связь с человеком означает: он создатель или назначенный участник задачи.
 func (repo *TaskRepository) List(
@@ -92,6 +111,9 @@ func (repo *TaskRepository) List(
 	tasks := make([]domain.Task, 0)
 	for _, record := range repo.tasks {
 		if record.task.ChatID != filter.ChatID {
+			continue
+		}
+		if record.task.IsDeleted() {
 			continue
 		}
 		if filter.UserID != nil && !recordBelongsToUser(record, *filter.UserID) {

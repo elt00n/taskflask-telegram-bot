@@ -9,7 +9,7 @@ type TaskAccessPolicy struct{}
 
 // CanView разрешает просмотр любому активному участнику того же чата.
 func (TaskAccessPolicy) CanView(task domain.Task, member domain.ChatMember) bool {
-	return member.ChatID == task.ChatID && member.IsActive()
+	return !task.IsDeleted() && member.ChatID == task.ChatID && member.IsActive()
 }
 
 // CanEdit разрешает изменение создателю или назначенному редактору задачи.

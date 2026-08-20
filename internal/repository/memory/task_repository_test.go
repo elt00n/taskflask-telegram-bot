@@ -56,6 +56,74 @@ func TestTaskRepositoryRejectsDuplicateID(t *testing.T) {
 	}
 }
 
+func TestTaskRepositoryUpdatePreservesParticipants(t *testing.T) {
+	repo := memory.NewTaskRepository()
+	createdAt := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
+	task := newTestTask(t, "task-1", -100123, 1, createdAt)
+	participants := []domain.TaskParticipant{
+		{TaskID: task.ID, UserID: 2, Role: domain.TaskParticipantRoleAssignee},
+	}
+	mustCreateTask(t, repo, task, participants)
+
+	if err := task.Rename("Обновлённая задача", createdAt.Add(time.Hour)); err != nil {
+		t.Fatalf("Rename() returned an unexpected error: %v", err)
+	}
+	if err := repo.Update(context.Background(), task); err != nil {
+		t.Fatalf("Update() returned an unexpected error: %v", err)
+	}
+
+	gotTask, gotParticipants, err := repo.Get(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("Get() returned an unexpected error: %v", err)
+	}
+	if gotTask.Title != "Обновлённая задача" {
+		t.Errorf("updated title = %q, want %q", gotTask.Title, "Обновлённая задача")
+	}
+	if len(gotParticipants) != 1 || gotParticipants[0].UserID != 2 {
+		t.Errorf("participants after Update() = %#v, want user 2", gotParticipants)
+	}
+}
+
+func TestTaskRepositoryUpdateReturnsNotFound(t *testing.T) {
+	repo := memory.NewTaskRepository()
+	task := newTestTask(t, "missing-task", -100123, 1, time.Now())
+
+	err := repo.Update(context.Background(), task)
+	if !errors.Is(err, repository.ErrTaskNotFound) {
+		t.Fatalf("Update() error = %v, want %v", err, repository.ErrTaskNotFound)
+	}
+}
+
+func TestTaskRepositoryListHidesSoftDeletedTask(t *testing.T) {
+	repo := memory.NewTaskRepository()
+	createdAt := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
+	task := newTestTask(t, "task-1", -100123, 1, createdAt)
+	mustCreateTask(t, repo, task, nil)
+
+	if err := task.Delete(createdAt.Add(time.Hour)); err != nil {
+		t.Fatalf("Delete() returned an unexpected error: %v", err)
+	}
+	if err := repo.Update(context.Background(), task); err != nil {
+		t.Fatalf("Update() returned an unexpected error: %v", err)
+	}
+
+	tasks, err := repo.List(context.Background(), repository.TaskFilter{ChatID: task.ChatID})
+	if err != nil {
+		t.Fatalf("List() returned an unexpected error: %v", err)
+	}
+	if len(tasks) != 0 {
+		t.Errorf("List() returned %d tasks, want 0", len(tasks))
+	}
+
+	got, _, err := repo.Get(context.Background(), task.ID)
+	if err != nil {
+		t.Fatalf("Get() returned an unexpected error: %v", err)
+	}
+	if !got.IsDeleted() {
+		t.Error("Get() must retain the soft-deleted task")
+	}
+}
+
 func TestTaskRepositoryListByChatAndUser(t *testing.T) {
 	repo := memory.NewTaskRepository()
 	baseTime := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
