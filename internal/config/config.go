@@ -1,26 +1,52 @@
 // Package config отвечает за настройки приложения.
 package config
 
-import "os"
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+	"time"
 
-const defaultEnvironment = "development"
+	"github.com/joho/godotenv"
+)
+
+const (
+	defaultEnvironment = "development"
+	defaultTimezone    = "Europe/Moscow"
+)
+
+var ErrTelegramBotTokenRequired = errors.New("TELEGRAM_BOT_TOKEN is required")
 
 // Config объединяет настройки, которые приложение получает из окружения.
 // Секретные значения нельзя выводить в логи или сохранять в Git.
 type Config struct {
 	Environment      string
+	DefaultTimezone  string
 	TelegramBotToken string
 	DatabaseURL      string
 }
 
-// Load читает настройки процесса и возвращает готовую конфигурацию.
-// Проверку обязательных полей добавим тогда, когда подключим Telegram и PostgreSQL.
-func Load() Config {
-	return Config{
+// Load загружает локальный .env, читает окружение и проверяет обязательные поля.
+func Load() (Config, error) {
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return Config{}, fmt.Errorf("load .env: %w", err)
+	}
+
+	config := Config{
 		Environment:      envOrDefault("APP_ENV", defaultEnvironment),
+		DefaultTimezone:  envOrDefault("DEFAULT_TIMEZONE", defaultTimezone),
 		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
 		DatabaseURL:      os.Getenv("DATABASE_URL"),
 	}
+	if strings.TrimSpace(config.TelegramBotToken) == "" {
+		return Config{}, ErrTelegramBotTokenRequired
+	}
+	if _, err := time.LoadLocation(config.DefaultTimezone); err != nil {
+		return Config{}, fmt.Errorf("invalid DEFAULT_TIMEZONE %q: %w", config.DefaultTimezone, err)
+	}
+
+	return config, nil
 }
 
 func envOrDefault(name string, fallback string) string {
