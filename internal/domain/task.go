@@ -56,8 +56,8 @@ var (
 // Указатели *time.Time означают, что соответствующее время может отсутствовать.
 type Task struct {
 	ID          TaskID
-	ChatID      int64
-	CreatorID   int64
+	ChatID      ChatID
+	CreatorID   UserID
 	Title       string
 	Description string
 	Kind        TaskKind
@@ -74,8 +74,8 @@ type Task struct {
 // Необязательные значения имеют нулевое значение или равны nil.
 type NewTaskParams struct {
 	ID          TaskID
-	ChatID      int64
-	CreatorID   int64
+	ChatID      ChatID
+	CreatorID   UserID
 	Title       string
 	Description string
 	StartAt     *time.Time
@@ -89,10 +89,10 @@ func NewTask(params NewTaskParams, now time.Time) (Task, error) {
 	if strings.TrimSpace(string(params.ID)) == "" {
 		return Task{}, ErrTaskIDRequired
 	}
-	if params.ChatID == 0 {
+	if !params.ChatID.IsValid() {
 		return Task{}, ErrChatIDRequired
 	}
-	if params.CreatorID <= 0 {
+	if !params.CreatorID.IsValid() {
 		return Task{}, ErrCreatorRequired
 	}
 
