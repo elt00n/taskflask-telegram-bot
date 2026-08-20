@@ -70,12 +70,11 @@ Telegram transport отвечает за сопоставление usernames с
 Пользователь Telegram. Главный внешний идентификатор — `telegram_user_id`, потому
 что username может измениться.
 
-Основные поля: внутренний ID, Telegram ID, username, имя, часовой пояс, язык,
-персональные настройки, даты создания и изменения.
+Основные поля: Telegram ID, username, имя, часовой пояс и даты создания и изменения.
+Telegram ID сейчас используется как первичный ключ PostgreSQL. Дополнительный
+внутренний ID можно добавить позднее, если для этого появится практическая причина.
 
-В доменном Go-коде Telegram ID обёрнут в отдельный тип `UserID`. PostgreSQL позднее
-может использовать дополнительный внутренний ключ, который останется деталью слоя
-хранения.
+В доменном Go-коде Telegram ID обёрнут в отдельный тип `UserID`.
 
 ### Chat
 
@@ -242,15 +241,18 @@ telegram_task_bot/
 │   │   ├── user_repository.go
 │   │   ├── memory/
 │   │   │   ├── task_repository.go
+│   │   │   ├── user_repository.go
+│   │   │   ├── chat_repository.go
 │   │   │   └── chat_member_repository.go
 │   │   └── postgres/
 │   │       ├── task_repository.go
-│   │       └── user_repository.go
+│   │       ├── user_repository.go
+│   │       ├── chat_repository.go
+│   │       └── chat_member_repository.go
 │   ├── transport/
 │   │   ├── telegram/
 │   │   │   ├── bot.go
 │   │   │   ├── handler.go
-│   │   │   ├── directory.go
 │   │   │   └── format.go
 │   │   └── http/
 │   │       └── server.go
@@ -287,9 +289,9 @@ telegram_task_bot/
 
 На этапе локальной разработки Telegram transport получает updates через long
 polling. Он регистрирует отправителей команд как известных участников чата в
-PostgreSQL, но сопоставление usernames с Telegram ID пока держит в памяти. Следующий
-этап перенесёт этот каталог в таблицы пользователей и чатов. Production сможет
-перейти на webhook без изменения бизнес-сервисов.
+PostgreSQL и при каждом сообщении обновляет профиль пользователя и сведения о чате.
+Поиск username ограничен активными участниками текущего чата и учитывает смену
+username. Production сможет перейти на webhook без изменения бизнес-сервисов.
 
 ## 9. Надёжность напоминаний
 

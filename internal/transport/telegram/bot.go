@@ -23,9 +23,11 @@ func New(
 	token string,
 	tasks *service.TaskService,
 	members repository.ChatMemberRepository,
+	users repository.UserRepository,
+	chats repository.ChatRepository,
 	location *time.Location,
 ) (*Bot, error) {
-	handler := NewHandler(tasks, members, NewMemberDirectory(), location, time.Now)
+	handler := NewHandler(tasks, members, users, chats, location, time.Now)
 	client, err := telegrambot.New(
 		token,
 		telegrambot.WithDefaultHandler(handler.Handle),

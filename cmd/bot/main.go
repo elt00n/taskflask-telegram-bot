@@ -48,6 +48,8 @@ func main() {
 
 	taskRepository := postgresrepository.NewTaskRepository(databasePool)
 	memberRepository := postgresrepository.NewChatMemberRepository(databasePool)
+	userRepository := postgresrepository.NewUserRepository(databasePool)
+	chatRepository := postgresrepository.NewChatRepository(databasePool)
 	taskService := service.NewTaskService(
 		taskRepository,
 		memberRepository,
@@ -59,6 +61,8 @@ func main() {
 		cfg.TelegramBotToken,
 		taskService,
 		memberRepository,
+		userRepository,
+		chatRepository,
 		location,
 	)
 	if err != nil {

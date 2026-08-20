@@ -31,26 +31,29 @@ const helpText = `Taskflask — менеджер задач для Telegram.
 
 // Handler обрабатывает Telegram updates и вызывает бизнес-сервисы.
 type Handler struct {
-	tasks     *service.TaskService
-	members   repository.ChatMemberRepository
-	directory *MemberDirectory
-	location  *time.Location
-	clock     service.Clock
+	tasks    *service.TaskService
+	members  repository.ChatMemberRepository
+	users    repository.UserRepository
+	chats    repository.ChatRepository
+	location *time.Location
+	clock    service.Clock
 }
 
 func NewHandler(
 	tasks *service.TaskService,
 	members repository.ChatMemberRepository,
-	directory *MemberDirectory,
+	users repository.UserRepository,
+	chats repository.ChatRepository,
 	location *time.Location,
 	clock service.Clock,
 ) *Handler {
 	return &Handler{
-		tasks:     tasks,
-		members:   members,
-		directory: directory,
-		location:  location,
-		clock:     clock,
+		tasks:    tasks,
+		members:  members,
+		users:    users,
+		chats:    chats,
+		location: location,
+		clock:    clock,
 	}
 }
 
@@ -105,7 +108,14 @@ func (handler *Handler) createTask(
 	}
 
 	chatID := domain.ChatID(message.Chat.ID)
-	participantIDs, unknown := handler.directory.Resolve(chatID, parsed.ParticipantUsernames)
+	participantIDs, unknown, err := handler.resolveUsernames(
+		ctx,
+		chatID,
+		parsed.ParticipantUsernames,
+	)
+	if err != nil {
+		return "", err
+	}
 	if len(unknown) > 0 {
 		return "", fmt.Errorf("%w: @%s", errUnknownParticipants, strings.Join(unknown, ", @"))
 	}
@@ -144,7 +154,14 @@ func (handler *Handler) listTasks(
 			return "", errTasksUsage
 		}
 		username := normalizeUsername(fields[0])
-		userIDs, unknown := handler.directory.Resolve(chatID, []string{username})
+		userIDs, unknown, resolveErr := handler.resolveUsernames(
+			ctx,
+			chatID,
+			[]string{username},
+		)
+		if resolveErr != nil {
+			return "", resolveErr
+		}
 		if len(unknown) > 0 {
 			return "", fmt.Errorf("%w: @%s", errUnknownParticipants, username)
 		}
@@ -158,18 +175,76 @@ func (handler *Handler) listTasks(
 }
 
 func (handler *Handler) observeSender(ctx context.Context, message *models.Message) error {
-	member := domain.ChatMember{
-		ChatID:    domain.ChatID(message.Chat.ID),
-		UserID:    domain.UserID(message.From.ID),
-		Status:    domain.ChatMemberStatusMember,
-		UpdatedAt: handler.clock().UTC(),
+	now := handler.clock()
+	user, err := domain.NewUser(domain.NewUserParams{
+		ID:        domain.UserID(message.From.ID),
+		Username:  message.From.Username,
+		FirstName: message.From.FirstName,
+	}, now)
+	if err != nil {
+		return fmt.Errorf("create user profile: %w", err)
+	}
+
+	chatTitle := message.Chat.Title
+	if message.Chat.Type == models.ChatTypePrivate {
+		chatTitle = strings.TrimSpace(message.Chat.FirstName + " " + message.Chat.LastName)
+	}
+	chat, err := domain.NewChat(
+		domain.ChatID(message.Chat.ID),
+		chatTitle,
+		domain.ChatType(message.Chat.Type),
+		now,
+	)
+	if err != nil {
+		return fmt.Errorf("create chat: %w", err)
+	}
+
+	member, err := domain.NewChatMember(
+		chat.ID,
+		user.ID,
+		domain.ChatMemberStatusMember,
+		now,
+	)
+	if err != nil {
+		return fmt.Errorf("create chat member: %w", err)
+	}
+
+	if err := handler.users.Upsert(ctx, user); err != nil {
+		return err
+	}
+	if err := handler.chats.Upsert(ctx, chat); err != nil {
+		return err
 	}
 	if err := handler.members.Upsert(ctx, member); err != nil {
 		return err
 	}
-
-	handler.directory.Observe(member.ChatID, member.UserID, message.From.Username)
 	return nil
+}
+
+func (handler *Handler) resolveUsernames(
+	ctx context.Context,
+	chatID domain.ChatID,
+	usernames []string,
+) ([]domain.UserID, []string, error) {
+	userIDs := make([]domain.UserID, 0, len(usernames))
+	unknown := make([]string, 0)
+	for _, username := range usernames {
+		username = normalizeUsername(username)
+		user, err := handler.users.FindByUsernameInChat(ctx, chatID, username)
+		if errors.Is(err, repository.ErrUserNotFound) {
+			unknown = append(unknown, username)
+			continue
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		userIDs = append(userIDs, user.ID)
+	}
+	return userIDs, unknown, nil
+}
+
+func normalizeUsername(username string) string {
+	return strings.ToLower(strings.TrimPrefix(strings.TrimSpace(username), "@"))
 }
 
 func (handler *Handler) send(

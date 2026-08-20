@@ -88,20 +88,6 @@ func TestHandlerRejectsUnknownParticipant(t *testing.T) {
 	}
 }
 
-func TestMemberDirectoryUsesChatScope(t *testing.T) {
-	directory := NewMemberDirectory()
-	directory.Observe(-100123, 1, "@User1")
-
-	ids, unknown := directory.Resolve(-100123, []string{"user1"})
-	if len(ids) != 1 || ids[0] != 1 || len(unknown) != 0 {
-		t.Fatalf("Resolve() = ids %#v, unknown %#v; want user 1", ids, unknown)
-	}
-	ids, unknown = directory.Resolve(-200456, []string{"user1"})
-	if len(ids) != 0 || len(unknown) != 1 {
-		t.Fatalf("Resolve() in another chat = ids %#v, unknown %#v", ids, unknown)
-	}
-}
-
 func newTestHandler(t *testing.T) *Handler {
 	t.Helper()
 
@@ -111,6 +97,8 @@ func newTestHandler(t *testing.T) *Handler {
 	}
 	taskRepo := memory.NewTaskRepository()
 	memberRepo := memory.NewChatMemberRepository()
+	userRepo := memory.NewUserRepository(memberRepo)
+	chatRepo := memory.NewChatRepository()
 	fixedNow := time.Date(2026, time.August, 20, 12, 0, 0, 0, location)
 	taskService := service.NewTaskService(
 		taskRepo,
@@ -122,7 +110,8 @@ func newTestHandler(t *testing.T) *Handler {
 	return NewHandler(
 		taskService,
 		memberRepo,
-		NewMemberDirectory(),
+		userRepo,
+		chatRepo,
 		location,
 		func() time.Time { return fixedNow },
 	)
@@ -130,8 +119,16 @@ func newTestHandler(t *testing.T) *Handler {
 
 func testMessage(userID int64, username string, text string) *models.Message {
 	return &models.Message{
-		Chat: models.Chat{ID: -100123},
-		From: &models.User{ID: userID, Username: username},
+		Chat: models.Chat{
+			ID:    -100123,
+			Type:  models.ChatTypeGroup,
+			Title: "Тестовый чат",
+		},
+		From: &models.User{
+			ID:        userID,
+			Username:  username,
+			FirstName: username,
+		},
 		Text: text,
 	}
 }

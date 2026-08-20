@@ -4,6 +4,7 @@ package postgres_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -48,29 +49,76 @@ func TestRepositoriesPersistTaskAndMembership(t *testing.T) {
 			"DELETE FROM chat_members WHERE chat_id = $1",
 			chatID,
 		)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM chats WHERE id = $1", chatID)
+		_, _ = pool.Exec(
+			context.Background(),
+			"DELETE FROM users WHERE id IN ($1, $2)",
+			creatorID,
+			assigneeID,
+		)
 	})
 
-	memberRepository := postgresrepository.NewChatMemberRepository(pool)
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	member, err := domain.NewChatMember(
-		chatID,
-		creatorID,
-		domain.ChatMemberStatusMember,
-		now,
-	)
+	userRepository := postgresrepository.NewUserRepository(pool)
+	chatRepository := postgresrepository.NewChatRepository(pool)
+	memberRepository := postgresrepository.NewChatMemberRepository(pool)
+
+	creator, err := domain.NewUser(domain.NewUserParams{
+		ID:        creatorID,
+		Username:  "database_creator",
+		FirstName: "Создатель",
+	}, now)
 	if err != nil {
-		t.Fatalf("create member: %v", err)
+		t.Fatalf("create user: %v", err)
 	}
-	if err := memberRepository.Upsert(ctx, member); err != nil {
-		t.Fatalf("save member: %v", err)
+	assignee, err := domain.NewUser(domain.NewUserParams{
+		ID:        assigneeID,
+		Username:  "database_assignee",
+		FirstName: "Исполнитель",
+	}, now)
+	if err != nil {
+		t.Fatalf("create assignee: %v", err)
+	}
+	chat, err := domain.NewChat(chatID, "Проверка БД", domain.ChatTypeGroup, now)
+	if err != nil {
+		t.Fatalf("create chat: %v", err)
+	}
+	if err := userRepository.Upsert(ctx, creator); err != nil {
+		t.Fatalf("save creator: %v", err)
+	}
+	if err := userRepository.Upsert(ctx, assignee); err != nil {
+		t.Fatalf("save assignee: %v", err)
+	}
+	if err := chatRepository.Upsert(ctx, chat); err != nil {
+		t.Fatalf("save chat: %v", err)
+	}
+
+	for _, userID := range []domain.UserID{creatorID, assigneeID} {
+		member, err := domain.NewChatMember(
+			chatID,
+			userID,
+			domain.ChatMemberStatusMember,
+			now,
+		)
+		if err != nil {
+			t.Fatalf("create member: %v", err)
+		}
+		if err := memberRepository.Upsert(ctx, member); err != nil {
+			t.Fatalf("save member: %v", err)
+		}
 	}
 
 	storedMember, err := memberRepository.Get(ctx, chatID, creatorID)
 	if err != nil {
 		t.Fatalf("get member: %v", err)
 	}
-	if storedMember != member {
-		t.Fatalf("stored member = %#v, want %#v", storedMember, member)
+	if storedMember.UserID != creatorID || storedMember.ChatID != chatID {
+		t.Fatalf("stored member = %#v", storedMember)
+	}
+
+	resolved, err := userRepository.FindByUsernameInChat(ctx, chatID, "@DATABASE_ASSIGNEE")
+	if err != nil || resolved.ID != assigneeID {
+		t.Fatalf("resolve assignee = %#v, error %v", resolved, err)
 	}
 
 	task, err := domain.NewTask(domain.NewTaskParams{
@@ -120,5 +168,24 @@ func TestRepositoriesPersistTaskAndMembership(t *testing.T) {
 	}
 	if len(listedTasks) != 1 || listedTasks[0].Priority != domain.TaskPriorityCritical {
 		t.Fatalf("listed tasks = %#v, want one critical task", listedTasks)
+	}
+
+	renamedAssignee, err := domain.NewUser(domain.NewUserParams{
+		ID:        assigneeID,
+		Username:  "renamed_assignee",
+		FirstName: "Новое имя",
+	}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatalf("create renamed assignee: %v", err)
+	}
+	if err := userRepository.Upsert(ctx, renamedAssignee); err != nil {
+		t.Fatalf("save renamed assignee: %v", err)
+	}
+	if _, err := userRepository.FindByUsernameInChat(ctx, chatID, "database_assignee"); !errors.Is(err, repository.ErrUserNotFound) {
+		t.Fatalf("old username error = %v, want %v", err, repository.ErrUserNotFound)
+	}
+	resolved, err = userRepository.FindByUsernameInChat(ctx, chatID, "renamed_assignee")
+	if err != nil || resolved.ID != assigneeID {
+		t.Fatalf("resolve renamed assignee = %#v, error %v", resolved, err)
 	}
 }
