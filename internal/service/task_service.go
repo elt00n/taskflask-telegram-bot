@@ -28,6 +28,7 @@ type CreateTaskCommand struct {
 	CreatorID      domain.UserID
 	Title          string
 	Description    string
+	Priority       domain.TaskPriority
 	StartAt        *time.Time
 	EndAt          *time.Time
 	Deadline       *time.Time
@@ -91,6 +92,7 @@ func (service *TaskService) Create(
 		CreatorID:   command.CreatorID,
 		Title:       command.Title,
 		Description: command.Description,
+		Priority:    command.Priority,
 		StartAt:     command.StartAt,
 		EndAt:       command.EndAt,
 		Deadline:    command.Deadline,

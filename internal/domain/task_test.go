@@ -73,6 +73,24 @@ func TestNewTaskCreatesOneHourEventByDefault(t *testing.T) {
 	}
 }
 
+func TestNewTaskUsesSpecifiedPriority(t *testing.T) {
+	now := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
+
+	task, err := domain.NewTask(domain.NewTaskParams{
+		ID:        "task-1",
+		ChatID:    -100123,
+		CreatorID: 42,
+		Title:     "Срочная задача",
+		Priority:  domain.TaskPriorityCritical,
+	}, now)
+	if err != nil {
+		t.Fatalf("NewTask() returned an unexpected error: %v", err)
+	}
+	if task.Priority != domain.TaskPriorityCritical {
+		t.Errorf("Priority = %d, want %d", task.Priority, domain.TaskPriorityCritical)
+	}
+}
+
 func TestNewTaskRejectsInvalidData(t *testing.T) {
 	now := time.Date(2026, time.August, 20, 9, 0, 0, 0, time.UTC)
 	start := now.Add(time.Hour)

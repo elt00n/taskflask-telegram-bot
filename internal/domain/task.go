@@ -79,6 +79,7 @@ type NewTaskParams struct {
 	CreatorID   UserID
 	Title       string
 	Description string
+	Priority    TaskPriority
 	StartAt     *time.Time
 	EndAt       *time.Time
 	Deadline    *time.Time
@@ -112,6 +113,13 @@ func NewTask(params NewTaskParams, now time.Time) (Task, error) {
 	endAt := timeInUTC(params.EndAt)
 	deadline := timeInUTC(params.Deadline)
 	kind := TaskKindTask
+	priority := params.Priority
+	if priority == 0 {
+		priority = TaskPriorityNormal
+	}
+	if !priority.IsValid() {
+		return Task{}, ErrInvalidTaskPriority
+	}
 
 	if startAt != nil {
 		kind = TaskKindEvent
@@ -134,7 +142,7 @@ func NewTask(params NewTaskParams, now time.Time) (Task, error) {
 		Description: strings.TrimSpace(params.Description),
 		Kind:        kind,
 		Status:      TaskStatusNew,
-		Priority:    TaskPriorityNormal,
+		Priority:    priority,
 		StartAt:     startAt,
 		EndAt:       endAt,
 		Deadline:    deadline,

@@ -31,6 +31,7 @@ func TestTaskServiceCreate(t *testing.T) {
 		ChatID:         -100123,
 		CreatorID:      1,
 		Title:          "  Подготовить отчёт  ",
+		Priority:       domain.TaskPriorityHigh,
 		ParticipantIDs: []domain.UserID{1, 2, 2},
 	})
 	if err != nil {
@@ -42,6 +43,9 @@ func TestTaskServiceCreate(t *testing.T) {
 	}
 	if task.Title != "Подготовить отчёт" {
 		t.Errorf("task title = %q, want %q", task.Title, "Подготовить отчёт")
+	}
+	if task.Priority != domain.TaskPriorityHigh {
+		t.Errorf("task priority = %d, want %d", task.Priority, domain.TaskPriorityHigh)
 	}
 	if !task.CreatedAt.Equal(fixedNow) {
 		t.Errorf("CreatedAt = %v, want %v", task.CreatedAt, fixedNow)
