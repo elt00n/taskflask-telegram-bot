@@ -12,12 +12,20 @@ import (
 	"time"
 
 	"github.com/elt00n/taskflask-telegram-bot/internal/config"
-	"github.com/elt00n/taskflask-telegram-bot/internal/repository/memory"
+	"github.com/elt00n/taskflask-telegram-bot/internal/database"
+	postgresrepository "github.com/elt00n/taskflask-telegram-bot/internal/repository/postgres"
 	"github.com/elt00n/taskflask-telegram-bot/internal/service"
 	telegramtransport "github.com/elt00n/taskflask-telegram-bot/internal/transport/telegram"
 )
 
 func main() {
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
@@ -28,8 +36,18 @@ func main() {
 		log.Fatalf("load timezone: %v", err)
 	}
 
-	taskRepository := memory.NewTaskRepository()
-	memberRepository := memory.NewChatMemberRepository()
+	databasePool, err := database.Open(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("connect PostgreSQL: %v", err)
+	}
+	defer databasePool.Close()
+
+	if err := database.Migrate(ctx, databasePool); err != nil {
+		log.Fatalf("migrate PostgreSQL: %v", err)
+	}
+
+	taskRepository := postgresrepository.NewTaskRepository(databasePool)
+	memberRepository := postgresrepository.NewChatMemberRepository(databasePool)
 	taskService := service.NewTaskService(
 		taskRepository,
 		memberRepository,
@@ -46,13 +64,6 @@ func main() {
 	if err != nil {
 		log.Fatal("initialize Telegram: token check or connection failed")
 	}
-
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-		syscall.SIGTERM,
-	)
-	defer stop()
 
 	log.Printf(
 		"taskflask bot started in %s environment, timezone %s",

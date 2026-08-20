@@ -14,6 +14,7 @@ import (
 const (
 	defaultEnvironment = "development"
 	defaultTimezone    = "Europe/Moscow"
+	defaultDatabaseURL = "postgres://taskflask:taskflask@localhost:5432/taskflask?sslmode=disable"
 )
 
 var ErrTelegramBotTokenRequired = errors.New("TELEGRAM_BOT_TOKEN is required")
@@ -37,7 +38,7 @@ func Load() (Config, error) {
 		Environment:      envOrDefault("APP_ENV", defaultEnvironment),
 		DefaultTimezone:  envOrDefault("DEFAULT_TIMEZONE", defaultTimezone),
 		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
-		DatabaseURL:      os.Getenv("DATABASE_URL"),
+		DatabaseURL:      envOrDefault("DATABASE_URL", defaultDatabaseURL),
 	}
 	if strings.TrimSpace(config.TelegramBotToken) == "" {
 		return Config{}, ErrTelegramBotTokenRequired

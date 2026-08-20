@@ -26,6 +26,22 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	if got.TelegramBotToken != "test-token" {
 		t.Error("TelegramBotToken was not loaded from the environment")
 	}
+	if got.DatabaseURL != "postgres://example" {
+		t.Errorf("DatabaseURL = %q, want %q", got.DatabaseURL, "postgres://example")
+	}
+}
+
+func TestLoadUsesLocalDatabaseByDefault(t *testing.T) {
+	t.Setenv("TELEGRAM_BOT_TOKEN", "test-token")
+	t.Setenv("DATABASE_URL", "")
+
+	got, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() returned an unexpected error: %v", err)
+	}
+	if got.DatabaseURL == "" {
+		t.Fatal("DatabaseURL must have a local development default")
+	}
 }
 
 func TestLoadRequiresTelegramToken(t *testing.T) {
