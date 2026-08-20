@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -139,6 +140,13 @@ func TestRepositoriesPersistTaskAndMembership(t *testing.T) {
 	taskRepository := postgresrepository.NewTaskRepository(pool)
 	if err := taskRepository.Create(ctx, task, participants); err != nil {
 		t.Fatalf("save task: %v", err)
+	}
+	resolvedTaskID, err := taskRepository.ResolveID(ctx, chatID, string(task.ID)[:8])
+	if err != nil || resolvedTaskID != task.ID {
+		t.Fatalf("resolve task ID = %q, error %v; want %q", resolvedTaskID, err, task.ID)
+	}
+	if _, err := taskRepository.ResolveID(ctx, chatID, strings.Repeat("f", 8)); !errors.Is(err, repository.ErrTaskNotFound) {
+		t.Fatalf("resolve missing task error = %v, want %v", err, repository.ErrTaskNotFound)
 	}
 
 	storedTask, storedParticipants, err := taskRepository.Get(ctx, task.ID)

@@ -4,6 +4,7 @@ package memory
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/elt00n/taskflask-telegram-bot/internal/domain"
@@ -15,6 +16,42 @@ var _ repository.TaskRepository = (*TaskRepository)(nil)
 type taskRecord struct {
 	task         domain.Task
 	participants []domain.TaskParticipant
+}
+
+// ResolveID находит полное ID по его началу только внутри указанного чата.
+func (repo *TaskRepository) ResolveID(
+	ctx context.Context,
+	chatID domain.ChatID,
+	reference string,
+) (domain.TaskID, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+
+	reference = strings.ToLower(strings.TrimSpace(reference))
+	if reference == "" {
+		return "", repository.ErrTaskNotFound
+	}
+	repo.mutex.RLock()
+	defer repo.mutex.RUnlock()
+
+	var found domain.TaskID
+	for taskID, record := range repo.tasks {
+		if record.task.ChatID != chatID || record.task.IsDeleted() {
+			continue
+		}
+		if !strings.HasPrefix(strings.ToLower(string(taskID)), reference) {
+			continue
+		}
+		if found != "" {
+			return "", repository.ErrTaskIDAmbiguous
+		}
+		found = taskID
+	}
+	if found == "" {
+		return "", repository.ErrTaskNotFound
+	}
+	return found, nil
 }
 
 // TaskRepository хранит задачи до завершения процесса.

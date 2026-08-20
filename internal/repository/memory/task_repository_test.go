@@ -158,6 +158,28 @@ func TestTaskRepositoryListByChatAndUser(t *testing.T) {
 	}
 }
 
+func TestTaskRepositoryResolvesUniqueIDPrefixInsideChat(t *testing.T) {
+	repo := memory.NewTaskRepository()
+	now := time.Date(2026, time.August, 20, 12, 0, 0, 0, time.UTC)
+	task1 := newTestTask(t, "aaaaaaaa-1111-4111-8111-111111111111", -100123, 1, now)
+	task2 := newTestTask(t, "aaaaaaaa-2222-4222-8222-222222222222", -100123, 1, now)
+	taskOtherChat := newTestTask(t, "bbbbbbbb-3333-4333-8333-333333333333", -200456, 1, now)
+	mustCreateTask(t, repo, task1, nil)
+	mustCreateTask(t, repo, task2, nil)
+	mustCreateTask(t, repo, taskOtherChat, nil)
+
+	got, err := repo.ResolveID(context.Background(), -100123, "aaaaaaaa-1")
+	if err != nil || got != task1.ID {
+		t.Fatalf("ResolveID() = %q, %v; want %q", got, err, task1.ID)
+	}
+	if _, err := repo.ResolveID(context.Background(), -100123, "aaaaaaaa"); !errors.Is(err, repository.ErrTaskIDAmbiguous) {
+		t.Fatalf("ambiguous ResolveID() error = %v, want %v", err, repository.ErrTaskIDAmbiguous)
+	}
+	if _, err := repo.ResolveID(context.Background(), -100123, "bbbbbbbb"); !errors.Is(err, repository.ErrTaskNotFound) {
+		t.Fatalf("other chat ResolveID() error = %v, want %v", err, repository.ErrTaskNotFound)
+	}
+}
+
 func TestTaskRepositoryHonorsCancelledContext(t *testing.T) {
 	repo := memory.NewTaskRepository()
 	ctx, cancel := context.WithCancel(context.Background())

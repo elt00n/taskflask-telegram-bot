@@ -25,6 +25,12 @@ const helpText = `Taskflask — менеджер задач для Telegram.
 /task до пятницы 18:00 Закончить макет важно
 /tasks — все задачи текущего чата
 /tasks @username — задачи выбранного участника
+/rename ID Новое название
+/priority ID низкий|обычный|важный|критический
+/deadline ID 25 августа 2027 18:00
+/deadline ID - — убрать дедлайн
+/done ID — завершить задачу
+/delete ID — удалить задачу
 /help — эта справка
 
 Важность: добавьте слово «важно» или «срочно».`
@@ -69,13 +75,20 @@ func (handler *Handler) Handle(
 
 	message := update.Message
 	if err := handler.observeSender(ctx, message); err != nil {
-		handler.send(ctx, bot, message, "Не удалось зарегистрировать участника. Попробуйте ещё раз.")
+		handler.send(
+			ctx,
+			bot,
+			message,
+			"Не удалось зарегистрировать участника. Попробуйте ещё раз.",
+			nil,
+		)
 		log.Printf("observe Telegram sender: %v", err)
 		return
 	}
 
 	command := commandName(message.Text)
 	var response string
+	var replyMarkup models.ReplyMarkup
 	var err error
 
 	switch command {
@@ -84,9 +97,23 @@ func (handler *Handler) Handle(
 	case "/help":
 		response = helpText
 	case "/task":
-		response, err = handler.createTask(ctx, message)
+		var task domain.Task
+		task, response, err = handler.createTaskResult(ctx, message)
+		if err == nil {
+			replyMarkup = taskActionsKeyboard(task)
+		}
 	case "/tasks":
 		response, err = handler.listTasks(ctx, message)
+	case "/rename":
+		response, err = handler.renameTask(ctx, message)
+	case "/priority":
+		response, err = handler.changeTaskPriority(ctx, message)
+	case "/deadline":
+		response, err = handler.changeTaskDeadline(ctx, message)
+	case "/done":
+		response, err = handler.completeTask(ctx, message)
+	case "/delete":
+		response, err = handler.deleteTask(ctx, message)
 	default:
 		return
 	}
@@ -95,16 +122,24 @@ func (handler *Handler) Handle(
 		log.Printf("handle %s: %v", command, err)
 		response = userErrorMessage(err)
 	}
-	handler.send(ctx, bot, message, response)
+	handler.send(ctx, bot, message, response, replyMarkup)
 }
 
 func (handler *Handler) createTask(
 	ctx context.Context,
 	message *models.Message,
 ) (string, error) {
+	_, response, err := handler.createTaskResult(ctx, message)
+	return response, err
+}
+
+func (handler *Handler) createTaskResult(
+	ctx context.Context,
+	message *models.Message,
+) (domain.Task, string, error) {
 	parsed, err := parser.ParseTask(message.Text, handler.clock(), handler.location)
 	if err != nil {
-		return "", err
+		return domain.Task{}, "", err
 	}
 
 	chatID := domain.ChatID(message.Chat.ID)
@@ -114,10 +149,14 @@ func (handler *Handler) createTask(
 		parsed.ParticipantUsernames,
 	)
 	if err != nil {
-		return "", err
+		return domain.Task{}, "", err
 	}
 	if len(unknown) > 0 {
-		return "", fmt.Errorf("%w: @%s", errUnknownParticipants, strings.Join(unknown, ", @"))
+		return domain.Task{}, "", fmt.Errorf(
+			"%w: @%s",
+			errUnknownParticipants,
+			strings.Join(unknown, ", @"),
+		)
 	}
 
 	task, err := handler.tasks.Create(ctx, service.CreateTaskCommand{
@@ -130,10 +169,10 @@ func (handler *Handler) createTask(
 		ParticipantIDs: participantIDs,
 	})
 	if err != nil {
-		return "", err
+		return domain.Task{}, "", err
 	}
 
-	return formatCreatedTask(task, handler.location), nil
+	return task, formatCreatedTask(task, handler.location), nil
 }
 
 func (handler *Handler) listTasks(
@@ -252,11 +291,13 @@ func (handler *Handler) send(
 	bot *telegrambot.Bot,
 	message *models.Message,
 	text string,
+	replyMarkup models.ReplyMarkup,
 ) {
 	_, err := bot.SendMessage(ctx, &telegrambot.SendMessageParams{
 		ChatID:          message.Chat.ID,
 		MessageThreadID: message.MessageThreadID,
 		Text:            text,
+		ReplyMarkup:     replyMarkup,
 	})
 	if err != nil {
 		log.Print("send Telegram message failed")
@@ -280,6 +321,7 @@ func commandArguments(text string) string {
 var (
 	errUnknownParticipants = errors.New("unknown task participants")
 	errTasksUsage          = errors.New("invalid tasks command")
+	errTaskCallbackInvalid = errors.New("invalid task callback")
 )
 
 func userErrorMessage(err error) string {
@@ -294,6 +336,22 @@ func userErrorMessage(err error) string {
 		return "Я ещё не знаю одного из указанных участников. Попросите его сначала выполнить /start или /help в этом чате."
 	case errors.Is(err, errTasksUsage):
 		return "Используйте /tasks или /tasks @username."
+	case errors.Is(err, errRenameUsage):
+		return "Используйте /rename ID Новое название. ID указан в списке /tasks."
+	case errors.Is(err, errPriorityUsage):
+		return "Используйте /priority ID низкий|обычный|важный|критический."
+	case errors.Is(err, errDeadlineUsage):
+		return "Используйте /deadline ID 25 августа 2027 18:00 или /deadline ID -."
+	case errors.Is(err, errDoneUsage):
+		return "Используйте /done ID."
+	case errors.Is(err, errDeleteUsage):
+		return "Используйте /delete ID. Удалять задачу может только её создатель."
+	case errors.Is(err, repository.ErrTaskNotFound):
+		return "Задача с таким ID не найдена в текущем чате. Посмотрите ID через /tasks."
+	case errors.Is(err, repository.ErrTaskIDAmbiguous):
+		return "Начало ID совпало у нескольких задач. Используйте больше символов ID."
+	case errors.Is(err, errTaskCallbackInvalid):
+		return "Эта кнопка устарела или повреждена. Откройте задачу заново."
 	case errors.Is(err, service.ErrTaskAccessDenied):
 		return "У вас нет доступа к этой операции."
 	default:

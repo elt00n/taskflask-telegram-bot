@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/elt00n/taskflask-telegram-bot/internal/domain"
 	"github.com/elt00n/taskflask-telegram-bot/internal/repository"
@@ -23,6 +24,49 @@ const taskColumns = `
 // TaskRepository сохраняет задачи и назначения в PostgreSQL.
 type TaskRepository struct {
 	pool *pgxpool.Pool
+}
+
+func (repo *TaskRepository) ResolveID(
+	ctx context.Context,
+	chatID domain.ChatID,
+	reference string,
+) (domain.TaskID, error) {
+	reference = strings.ToLower(strings.TrimSpace(reference))
+	if reference == "" {
+		return "", repository.ErrTaskNotFound
+	}
+	rows, err := repo.pool.Query(ctx, `
+		SELECT id::text
+		FROM tasks
+		WHERE chat_id = $1
+			AND deleted_at IS NULL
+			AND id::text LIKE $2 || '%'
+		ORDER BY id
+		LIMIT 2
+	`, chatID, reference)
+	if err != nil {
+		return "", fmt.Errorf("resolve task ID: %w", err)
+	}
+	defer rows.Close()
+
+	ids := make([]domain.TaskID, 0, 2)
+	for rows.Next() {
+		var taskID domain.TaskID
+		if err := rows.Scan(&taskID); err != nil {
+			return "", fmt.Errorf("scan resolved task ID: %w", err)
+		}
+		ids = append(ids, taskID)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("iterate resolved task IDs: %w", err)
+	}
+	if len(ids) == 0 {
+		return "", repository.ErrTaskNotFound
+	}
+	if len(ids) > 1 {
+		return "", repository.ErrTaskIDAmbiguous
+	}
+	return ids[0], nil
 }
 
 func NewTaskRepository(pool *pgxpool.Pool) *TaskRepository {

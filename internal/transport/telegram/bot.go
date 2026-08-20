@@ -31,6 +31,11 @@ func New(
 	client, err := telegrambot.New(
 		token,
 		telegrambot.WithDefaultHandler(handler.Handle),
+		telegrambot.WithCallbackQueryDataHandler(
+			taskCallbackPrefix,
+			telegrambot.MatchTypePrefix,
+			handler.HandleTaskCallback,
+		),
 		telegrambot.WithErrorsHandler(func(error) {
 			log.Print("Telegram polling request failed")
 		}),

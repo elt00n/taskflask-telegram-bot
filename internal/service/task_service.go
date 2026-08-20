@@ -44,6 +44,40 @@ type TaskService struct {
 	access     TaskAccessPolicy
 }
 
+// ResolveTaskID превращает показанный пользователю короткий ID в полный ID задачи
+// и не позволяет ссылаться на задачу из другого чата.
+func (service *TaskService) ResolveTaskID(
+	ctx context.Context,
+	requesterID domain.UserID,
+	chatID domain.ChatID,
+	reference string,
+) (domain.TaskID, error) {
+	if _, err := service.activeMember(ctx, chatID, requesterID); err != nil {
+		return "", err
+	}
+	return service.tasks.ResolveID(ctx, chatID, reference)
+}
+
+// GetTask возвращает видимую задачу только из указанного чата.
+func (service *TaskService) GetTask(
+	ctx context.Context,
+	requesterID domain.UserID,
+	chatID domain.ChatID,
+	taskID domain.TaskID,
+) (domain.Task, error) {
+	if _, err := service.activeMember(ctx, chatID, requesterID); err != nil {
+		return domain.Task{}, err
+	}
+	task, _, err := service.tasks.Get(ctx, taskID)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	if task.ChatID != chatID || task.IsDeleted() {
+		return domain.Task{}, repository.ErrTaskNotFound
+	}
+	return task, nil
+}
+
 // NewTaskService собирает сервис из независимых компонентов.
 func NewTaskService(
 	tasks repository.TaskRepository,

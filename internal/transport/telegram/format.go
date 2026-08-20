@@ -15,6 +15,7 @@ func formatCreatedTask(task domain.Task, location *time.Location) string {
 		"✅ Дело создано",
 		"",
 		priorityIcon(task.Priority) + " " + task.Title,
+		"ID: " + shortTaskID(task.ID),
 	}
 	lines = append(lines, formatTaskTimes(task, location)...)
 	return strings.Join(lines, "\n")
@@ -31,7 +32,13 @@ func formatTaskList(tasks []domain.Task, location *time.Location) string {
 	}
 	lines := []string{"📋 Задачи", ""}
 	for index, task := range tasks[:limit] {
-		lines = append(lines, fmt.Sprintf("%d. %s %s", index+1, priorityIcon(task.Priority), task.Title))
+		lines = append(lines, fmt.Sprintf(
+			"%d. %s %s · %s",
+			index+1,
+			priorityIcon(task.Priority),
+			task.Title,
+			shortTaskID(task.ID),
+		))
 		for _, value := range formatTaskTimes(task, location) {
 			lines = append(lines, "   "+value)
 		}
@@ -41,6 +48,26 @@ func formatTaskList(tasks []domain.Task, location *time.Location) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func formatUpdatedTask(message string, task domain.Task, location *time.Location) string {
+	lines := []string{
+		message,
+		"",
+		priorityIcon(task.Priority) + " " + task.Title,
+		"ID: " + shortTaskID(task.ID),
+	}
+	lines = append(lines, formatTaskTimes(task, location)...)
+	return strings.Join(lines, "\n")
+}
+
+func shortTaskID(taskID domain.TaskID) string {
+	const visibleLength = 8
+	value := string(taskID)
+	if len(value) <= visibleLength {
+		return value
+	}
+	return value[:visibleLength]
 }
 
 func formatTaskTimes(task domain.Task, location *time.Location) []string {

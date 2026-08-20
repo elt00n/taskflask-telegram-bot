@@ -11,6 +11,7 @@ import (
 var (
 	ErrTaskNotFound      = errors.New("task not found")
 	ErrTaskAlreadyExists = errors.New("task already exists")
+	ErrTaskIDAmbiguous   = errors.New("task ID prefix is ambiguous")
 )
 
 // TaskFilter задаёт условия получения списка задач.
@@ -33,4 +34,9 @@ type TaskRepository interface {
 	) (domain.Task, []domain.TaskParticipant, error)
 	Update(ctx context.Context, task domain.Task) error
 	List(ctx context.Context, filter TaskFilter) ([]domain.Task, error)
+	ResolveID(
+		ctx context.Context,
+		chatID domain.ChatID,
+		reference string,
+	) (domain.TaskID, error)
 }
